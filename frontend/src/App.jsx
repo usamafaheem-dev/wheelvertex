@@ -41,7 +41,8 @@ function App() {
   const [currentFileIndex, setCurrentFileIndex] = useState(0) // Current file being used
   const [showEndScreen, setShowEndScreen] = useState(false) // End screen flag
   const [hardcodedWinners, setHardcodedWinners] = useState(['', '']) // Hardcoded winners for spin 1-2
-  const [finalRotation, setFinalRotation] = useState(0) // Single rotation value - the only source of truth
+  const [finalRotation, setFinalRotation] = useState(0) // Used only for winner calculation & reset triggers
+  const finalRotationRef = useRef(0) // Source of truth for canvas animation (no React re-render)
   const [isSpinning, setIsSpinning] = useState(false)
   const [isSidebarHidden, setIsSidebarHidden] = useState(false)
   const [showWinner, setShowWinner] = useState(false)
@@ -276,10 +277,8 @@ function App() {
       const delta = currentTime - lastTime
       lastTime = currentTime
 
-      // Update finalRotation smoothly - very slow and smooth for organic, elegant look
-      // Reduced to 0.3 degrees per 50ms = 6 degrees per second (very slow and smooth)
-      // This matches the smooth, organic feel of the spin animation
-      setFinalRotation(prev => (prev + (0.3 * delta / 50)) % 360)
+      // Smooth idle rotation: 8 degrees/second — only ref, no React re-render
+      finalRotationRef.current = (finalRotationRef.current + (8 * delta / 1000)) % 360
 
       slowRotationFrameRef.current = requestAnimationFrame(animateSlow)
     }
@@ -365,8 +364,8 @@ function App() {
 
     setIsSpinning(true)
 
-    // Get current rotation - this is the ONLY rotation value
-    const startRotation = finalRotation
+    // Get current rotation from ref — no stale state
+    const startRotation = finalRotationRef.current
     let lastTickRotation = startRotation // Track last rotation for sound sync
 
     // Duration: 15000ms (15s) - Smooth 15 second spin
@@ -826,48 +825,24 @@ function App() {
 
     const startTime = performance.now()
 
-    // Custom Easing: Multi-phase smooth spin
-    // Phases:
-    // 0-2s (0-0.133): Slow start - gentle acceleration
-    // 2-4s (0.133-0.267): Transition to medium fast
-    // 4-9s (0.267-0.6): Medium fast - steady speed with slight acceleration
-    // 9-15s (0.6-1.0): Gradual slowdown - smooth deceleration over last 6 seconds
+    // Easing: Natural wheel spin feel
+    // Fast acceleration at start, long steady spin, then smooth gradual stop
     const ease = (t) => {
-      // Normalize time to 0-1 range (t is already 0-1)
-      const totalTime = 15 // seconds
-      const phase1End = 2 / totalTime   // 0.133 - Slow start phase
-      const phase2End = 4 / totalTime   // 0.267 - Transition phase
-      const phase3End = 9 / totalTime   // 0.6 - Medium fast phase
-      // phase4End = 1.0 - Gradual slowdown phase
-
-      if (t < phase1End) {
-        // Phase 1: Slow start (0-2s) - Gentle acceleration
-        const phaseProgress = t / phase1End
-        // Slow, smooth acceleration curve
-        return 0.08 * Math.pow(phaseProgress, 2.5)
-      } else if (t < phase2End) {
-        // Phase 2: Transition (2-4s) - Building up to medium fast
-        const phaseProgress = (t - phase1End) / (phase2End - phase1End)
-        const startValue = 0.08
-        const endValue = 0.40
-        // Smooth transition with easing
-        return startValue + (endValue - startValue) * (1 - Math.pow(1 - phaseProgress, 1.5))
-      } else if (t < phase3End) {
-        // Phase 3: Medium fast (4-9s) - Steady speed with very slight acceleration
-        // Use a more linear approach with minimal curve for smooth, consistent behavior
-        const phaseProgress = (t - phase2End) / (phase3End - phase2End)
-        const startValue = 0.40
-        const endValue = 0.82
-        // Nearly linear with very slight ease-in for natural feel
-        // Using exponent close to 1.0 for steady speed
-        return startValue + (endValue - startValue) * Math.pow(phaseProgress, 0.95)
+      // Acceleration phase: 0 -> 0.15 (first 15% = ~2.25s)
+      // Full speed phase:   0.15 -> 0.65 (middle 50% = ~7.5s)
+      // Deceleration phase: 0.65 -> 1.0 (last 35% = ~5.25s)
+      if (t < 0.15) {
+        // Smooth ease-in: cubic acceleration
+        const p = t / 0.15
+        return 0.15 * (p * p * p)
+      } else if (t < 0.65) {
+        // Full speed: linear (no jitter, constant velocity feel)
+        const p = (t - 0.15) / 0.50
+        return 0.15 + 0.70 * p
       } else {
-        // Phase 4: Gradual slowdown (9-15s, last 6 seconds)
-        const phaseProgress = (t - phase3End) / (1 - phase3End)
-        const startValue = 0.82
-        const endValue = 1.0
-        // Smooth deceleration curve
-        return startValue + (endValue - startValue) * (1 - Math.pow(1 - phaseProgress, 3))
+        // Smooth ease-out: cubic deceleration — natural slow stop
+        const p = (t - 0.65) / 0.35
+        return 0.85 + 0.15 * (1 - Math.pow(1 - p, 3))
       }
     }
 
@@ -893,9 +868,8 @@ function App() {
         const easedProgress = ease(progress)
         const current = startRotation + (endRotation - startRotation) * easedProgress
         
-        // Always update every frame for smooth, glitch-free animation
-        // No throttling - smooth rotation is priority
-            setFinalRotation(current)
+        // Update ref directly — no React re-render, pure canvas animation
+            finalRotationRef.current = current
         
         // Robust sync: Play sound every 25 degrees (throttle sound for many entries)
         if (names.length < 2000 && Math.abs(current - lastTickRotation) >= 25) {
@@ -915,6 +889,7 @@ function App() {
         }
 
         // Set to EXACT endRotation - freeze immediately
+        finalRotationRef.current = endRotation
         setFinalRotation(endRotation)
         isFrozenRef.current = true
 
@@ -1269,7 +1244,7 @@ function App() {
 
     // Start animation immediately
     animationFrameRef.current = requestAnimationFrame(animate)
-  }, [isSpinning, names, displayedNames, finalRotation, settings.spinTime, selectedSpinFile, spinMode, spinModes, spinCount])
+  }, [isSpinning, names, displayedNames, settings.spinTime, selectedSpinFile, spinMode, spinModes, spinCount])
 
   const handleWheelClick = () => {
     // Prevent clicking when spinning or showing winner, but keep normal cursor
@@ -1601,6 +1576,7 @@ function App() {
     setNamesText('Ali\nBeatriz\nCharles\nDiya\nEric\nFatima\nGabriel\nHanna')
     setResults([])
     setActiveTab('entries')
+    finalRotationRef.current = 0
     setFinalRotation(0)
     setIsSpinning(false)
     setShowWinner(false)
@@ -1701,6 +1677,7 @@ function App() {
       setNameToIndexMap({})
       setTicketToNameMap({})
       setTicketToIndexMap({})
+      finalRotationRef.current = 0
       setFinalRotation(0)
       setIsSpinning(false)
       setShowWinner(false)
@@ -2992,7 +2969,7 @@ function App() {
                 <CanvasWheel
                   names={fixedBatchRef.current && isSpinning ? fixedBatchRef.current : displayedNames}
                   colors={colors}
-                  rotation={finalRotation}
+                  rotationRef={finalRotationRef}
                   width={750}
                   height={750}
                   centerImage={centerImage}
@@ -3353,7 +3330,7 @@ function App() {
               <CanvasWheel
                 names={displayedNames}
                 colors={colors}
-                rotation={finalRotation}
+                rotationRef={finalRotationRef}
                 width={750}
                 height={750}
                 centerImage={centerImage}

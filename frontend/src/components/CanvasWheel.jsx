@@ -1,17 +1,11 @@
 import React, { useRef, useEffect, memo } from 'react'
 
-const CanvasWheel = memo(({ names, colors, rotation, width = 800, height = 800, centerImage = null, centerImageSize = 'M' }) => {
+const CanvasWheel = memo(({ names, colors, rotationRef, width = 800, height = 800, centerImage = null, centerImageSize = 'M' }) => {
     const canvasRef = useRef(null)
     const centerImageLoadedRef = useRef(null)
-    const rotationRef = useRef(rotation)
     const animationFrameRef = useRef(null)
-    const staticWheelCanvasRef = useRef(null) // Offscreen canvas for static wheel
-    const needsRedrawRef = useRef(true) // Track if static wheel needs to be redrawn
-
-    // Update rotation ref without triggering re-render
-    useEffect(() => {
-        rotationRef.current = rotation
-    }, [rotation])
+    const staticWheelCanvasRef = useRef(null)
+    const needsRedrawRef = useRef(true)
 
     // Setup canvas and static wheel (only when names/colors change, NOT rotation)
     useEffect(() => {
@@ -32,15 +26,9 @@ const CanvasWheel = memo(({ names, colors, rotation, width = 800, height = 800, 
             ctx.imageSmoothingQuality = 'high' // Best quality for smooth rendering
         }
 
-        // Create offscreen canvas for static wheel (wheel without rotation)
+        // Create offscreen canvas for static wheel (initial placeholder)
         const staticCanvas = document.createElement('canvas')
         staticWheelCanvasRef.current = staticCanvas
-        const staticCtx = staticCanvas.getContext('2d', {
-            alpha: true,
-            desynchronized: true,
-            willReadFrequently: false,
-            powerPreference: 'high-performance'
-        })
 
         // Reduce DPR for many entries to improve performance
         const baseDpr = window.devicePixelRatio || 1
@@ -67,20 +55,12 @@ const CanvasWheel = memo(({ names, colors, rotation, width = 800, height = 800, 
             // Setting width/height resets the context, so we need to reapply settings
             canvas.width = displayWidth * dpr
             canvas.height = displayHeight * dpr
-            staticCanvas.width = displayWidth * dpr
-            staticCanvas.height = displayHeight * dpr
+            // staticCanvas size is managed per-draw in drawStaticWheel (double buffer)
 
-            // Normalize coordinate system to use css pixels
-            ctx.setTransform(1, 0, 0, 1, 0, 0) // Reset transform
+            ctx.setTransform(1, 0, 0, 1, 0, 0)
             ctx.scale(dpr, dpr)
-            staticCtx.setTransform(1, 0, 0, 1, 0, 0) // Reset transform
-            staticCtx.scale(dpr, dpr)
-            
-            // Enable image smoothing for better quality
             ctx.imageSmoothingEnabled = true
             ctx.imageSmoothingQuality = names.length > 1000 ? 'medium' : 'high'
-            staticCtx.imageSmoothingEnabled = true
-            staticCtx.imageSmoothingQuality = names.length > 1000 ? 'medium' : 'high'
 
             needsRedrawRef.current = true
         }
@@ -106,116 +86,89 @@ const CanvasWheel = memo(({ names, colors, rotation, width = 800, height = 800, 
         })
         resizeObserver.observe(canvas)
 
-        // Draw static wheel (without rotation) to offscreen canvas
         const drawStaticWheel = () => {
-            if (!staticWheelCanvasRef.current) return
+            // Draw to a TEMP canvas first, then swap atomically — never shows blank frame
+            const tempCanvas = document.createElement('canvas')
+            // Use current canvas dimensions (not old static canvas which may be 0)
+            tempCanvas.width = canvasWidth * dpr
+            tempCanvas.height = canvasHeight * dpr
+            const tempCtx = tempCanvas.getContext('2d', { alpha: true, willReadFrequently: false })
+            tempCtx.setTransform(1, 0, 0, 1, 0, 0)
+            tempCtx.scale(dpr, dpr)
+            tempCtx.imageSmoothingEnabled = true
+            tempCtx.imageSmoothingQuality = names.length > 1000 ? 'medium' : 'high'
+            const sCtx = tempCtx
 
-            // Clear static canvas - use CSS pixel dimensions (context is already scaled)
-            staticCtx.clearRect(0, 0, canvasWidth, canvasHeight)
-
-            // Handle empty state - show a default gray wheel with message
+            // Handle empty state
             if (names.length === 0) {
-                // Draw a simple gray circle
-                staticCtx.beginPath()
-                staticCtx.arc(centerX, centerY, radius, 0, 2 * Math.PI)
-                staticCtx.fillStyle = '#2a2a2a' // Dark gray background
-                staticCtx.fill()
-                
-                // Draw border
-                staticCtx.strokeStyle = '#3a3a3a'
-                staticCtx.lineWidth = 2
-                staticCtx.stroke()
-                
-                // Draw center hub
+                sCtx.beginPath()
+                sCtx.arc(centerX, centerY, radius, 0, 2 * Math.PI)
+                sCtx.fillStyle = '#2a2a2a'
+                sCtx.fill()
+                sCtx.strokeStyle = '#3a3a3a'
+                sCtx.lineWidth = 2
+                sCtx.stroke()
                 const isMobile = window.innerWidth < 768
                 const hubRadius = isMobile ? 35 : 70
-                staticCtx.beginPath()
-                staticCtx.arc(centerX, centerY, hubRadius, 0, 2 * Math.PI)
-                staticCtx.fillStyle = 'white'
-                staticCtx.shadowColor = 'rgba(0,0,0,0.2)'
-                staticCtx.shadowBlur = 5
-                staticCtx.fill()
-                
-                // Draw center image if available
-                if (centerImageLoadedRef.current && 
-                    centerImageLoadedRef.current.complete && 
-                    centerImageLoadedRef.current.naturalWidth > 0) {
+                sCtx.beginPath()
+                sCtx.arc(centerX, centerY, hubRadius, 0, 2 * Math.PI)
+                sCtx.fillStyle = 'white'
+                sCtx.shadowColor = 'rgba(0,0,0,0.2)'
+                sCtx.shadowBlur = 5
+                sCtx.fill()
+                if (centerImageLoadedRef.current?.complete && centerImageLoadedRef.current?.naturalWidth > 0) {
                     try {
-                        let imageRadius
-                        // Desktop gets slightly larger image
                         const desktopMultiplier = isMobile ? 1.0 : 1.1
-                        if (centerImageSize === 'S') {
-                            imageRadius = hubRadius * 0.75 * desktopMultiplier
-                        } else if (centerImageSize === 'L') {
-                            imageRadius = hubRadius * 1.45 * desktopMultiplier
-                        } else {
-                            imageRadius = hubRadius * 1.15 * desktopMultiplier
-                        }
-                        
-                        staticCtx.save()
-                        staticCtx.beginPath()
-                        staticCtx.arc(centerX, centerY, imageRadius, 0, 2 * Math.PI)
-                        staticCtx.clip()
-                        staticCtx.drawImage(
-                            centerImageLoadedRef.current, 
-                            centerX - imageRadius, 
-                            centerY - imageRadius, 
-                            imageRadius * 2, 
-                            imageRadius * 2
-                        )
-                        staticCtx.restore()
-                        
-                        // Draw thin white border around the image
-                        staticCtx.save()
-                        staticCtx.beginPath()
-                        staticCtx.arc(centerX, centerY, imageRadius, 0, 2 * Math.PI)
-                        staticCtx.strokeStyle = 'white'
-                        staticCtx.lineWidth = 1.5
-                        staticCtx.stroke()
-                        staticCtx.restore()
-                    } catch (error) {
-                        console.error('Error drawing center image:', error)
-                    }
+                        let imageRadius = centerImageSize === 'S' ? hubRadius * 0.75 * desktopMultiplier
+                            : centerImageSize === 'L' ? hubRadius * 1.45 * desktopMultiplier
+                            : hubRadius * 1.15 * desktopMultiplier
+                        sCtx.save()
+                        sCtx.beginPath()
+                        sCtx.arc(centerX, centerY, imageRadius, 0, 2 * Math.PI)
+                        sCtx.clip()
+                        sCtx.drawImage(centerImageLoadedRef.current, centerX - imageRadius, centerY - imageRadius, imageRadius * 2, imageRadius * 2)
+                        sCtx.restore()
+                        sCtx.save()
+                        sCtx.beginPath()
+                        sCtx.arc(centerX, centerY, imageRadius, 0, 2 * Math.PI)
+                        sCtx.strokeStyle = 'white'
+                        sCtx.lineWidth = 1.5
+                        sCtx.stroke()
+                        sCtx.restore()
+                    } catch (e) {}
                 }
-                
+                // Atomic swap
+                staticWheelCanvasRef.current = tempCanvas
                 needsRedrawRef.current = false
                 return
             }
 
             const numSegments = names.length
             const sliceAngle = (2 * Math.PI) / numSegments
-
             const isManyEntries = names.length > 2000
             const isVeryManyEntries = names.length > 5000
-            
-            if (isVeryManyEntries) {
-                staticCtx.imageSmoothingEnabled = false
-            }
 
-            // Draw Shadow (behind the wheel) - Skip for many entries for performance
+            if (isVeryManyEntries) sCtx.imageSmoothingEnabled = false
+
             if (names.length < 2000) {
-                staticCtx.save()
-                staticCtx.shadowColor = 'rgba(0, 0, 0, 0.3)'
-                staticCtx.shadowBlur = 15
-                staticCtx.shadowOffsetY = 10
-                staticCtx.beginPath()
-                staticCtx.arc(centerX, centerY, radius, 0, 2 * Math.PI)
-                staticCtx.fillStyle = 'rgba(0,0,0,0)'
-                staticCtx.fill()
-                staticCtx.restore()
+                sCtx.save()
+                sCtx.shadowColor = 'rgba(0, 0, 0, 0.3)'
+                sCtx.shadowBlur = 15
+                sCtx.shadowOffsetY = 10
+                sCtx.beginPath()
+                sCtx.arc(centerX, centerY, radius, 0, 2 * Math.PI)
+                sCtx.fillStyle = 'rgba(0,0,0,0)'
+                sCtx.fill()
+                sCtx.restore()
             }
 
             const shouldDrawGradient = names.length < 300
             const shouldDrawStrokes = names.length < 500
-
-            // Use Path2D for better performance with many segments
             const segmentPaths = []
-            
-            // Batch create paths first
+
             for (let index = 0; index < names.length; index++) {
                 const startAngle = index * sliceAngle - Math.PI / 2
                 const endAngle = startAngle + sliceAngle
-                
                 const path = new Path2D()
                 path.moveTo(centerX, centerY)
                 path.arc(centerX, centerY, radius, startAngle, endAngle)
@@ -223,112 +176,71 @@ const CanvasWheel = memo(({ names, colors, rotation, width = 800, height = 800, 
                 segmentPaths.push({ path, index, startAngle, endAngle })
             }
 
-            // Draw all segments
             segmentPaths.forEach(({ path, index }) => {
-                staticCtx.fillStyle = colors[index % colors.length]
-                staticCtx.fill(path)
-
-                // Add gradient (skip for large lists)
+                sCtx.fillStyle = colors[index % colors.length]
+                sCtx.fill(path)
                 if (shouldDrawGradient && !isManyEntries) {
-                    const gradient = staticCtx.createRadialGradient(centerX, centerY, 0, centerX, centerY, radius)
+                    const gradient = sCtx.createRadialGradient(centerX, centerY, 0, centerX, centerY, radius)
                     gradient.addColorStop(0, 'rgba(255, 255, 255, 0.1)')
                     gradient.addColorStop(0.6, 'rgba(255, 255, 255, 0)')
                     gradient.addColorStop(1, 'rgba(0, 0, 0, 0.1)')
-                    staticCtx.fillStyle = gradient
-                    staticCtx.fill(path)
+                    sCtx.fillStyle = gradient
+                    sCtx.fill(path)
                 }
-
-                // Draw strokes
                 if (shouldDrawStrokes) {
-                    const strokeWidth = names.length > 500 ? 0.5 : 1
-                    staticCtx.lineWidth = strokeWidth
-                    staticCtx.strokeStyle = names.length > 500 ? 'rgba(0,0,0,0.05)' : 'rgba(0,0,0,0.1)'
-                    staticCtx.stroke(path)
+                    sCtx.lineWidth = names.length > 500 ? 0.5 : 1
+                    sCtx.strokeStyle = names.length > 500 ? 'rgba(0,0,0,0.05)' : 'rgba(0,0,0,0.1)'
+                    sCtx.stroke(path)
                 }
             })
 
-            // Draw text - always show, but adjust size and position based on entries
             segmentPaths.forEach(({ index, startAngle }) => {
                 const name = names[index]
                 const midAngle = startAngle + sliceAngle / 2
-                
-                staticCtx.save()
-                staticCtx.translate(centerX, centerY)
-                staticCtx.rotate(midAngle)
-
-                staticCtx.textAlign = 'right'
-                staticCtx.textBaseline = 'middle'
-
+                sCtx.save()
+                sCtx.translate(centerX, centerY)
+                sCtx.rotate(midAngle)
+                sCtx.textAlign = 'right'
+                sCtx.textBaseline = 'middle'
                 const bgColor = colors[index % colors.length]
-                staticCtx.fillStyle = (bgColor === '#efb71d' || bgColor === '#24a643') ? '#000000' : '#FFFFFF'
-
+                sCtx.fillStyle = (bgColor === '#efb71d' || bgColor === '#24a643') ? '#000000' : '#FFFFFF'
                 const isMobile = window.innerWidth < 768
                 const numEntries = names.length
-                
-                // Calculate font size based on number of entries
-                // Normal size for entries <= 50, then fixed 5px for entries > 50
                 let fontSize
-                if (numEntries <= 10) {
-                    // Normal size for few entries
-                    fontSize = isMobile ? 32 : 36
-                } else if (numEntries <= 50) {
-                    // Slightly smaller but still normal
-                    fontSize = isMobile ? 24 : 28
-                } else {
-                    // Fixed 5px for all entries > 50
-                    fontSize = 5
-                }
-                
-                // Also consider arc length to prevent text overflow
+                if (numEntries <= 10) fontSize = isMobile ? 32 : 36
+                else if (numEntries <= 50) fontSize = isMobile ? 24 : 28
+                else fontSize = 5
                 const textRadius = radius - (numEntries > 100 ? 5 : numEntries > 50 ? 8 : 12)
                 const arcLength = textRadius * sliceAngle
                 const maxSizeFromArc = arcLength / (isMobile ? 4 : 5)
-                
-                // For entries > 50, keep 5px fixed, but don't exceed arc length
-                if (numEntries > 50) {
-                    fontSize = Math.min(5, maxSizeFromArc)
-                } else {
-                    fontSize = Math.min(fontSize, maxSizeFromArc)
-                }
-                
-                // Ensure minimum readable size (5px for entries > 50, normal minimum for <= 50)
+                fontSize = numEntries > 50 ? Math.min(5, maxSizeFromArc) : Math.min(fontSize, maxSizeFromArc)
                 const minSize = numEntries > 50 ? 5 : (isMobile ? 6 : 8)
                 fontSize = Math.max(minSize, fontSize)
-
-                staticCtx.font = `500 ${fontSize}px "Montserrat", sans-serif`
-                staticCtx.shadowColor = 'rgba(0,0,0,0.2)'
-                staticCtx.shadowBlur = 2
-                staticCtx.shadowOffsetX = 1
-                staticCtx.shadowOffsetY = 1
-
-                // Truncate long names based on entries
+                sCtx.font = `500 ${fontSize}px "Montserrat", sans-serif`
+                sCtx.shadowColor = 'rgba(0,0,0,0.2)'
+                sCtx.shadowBlur = 2
+                sCtx.shadowOffsetX = 1
+                sCtx.shadowOffsetY = 1
                 let displayName = name
-                if (numEntries > 500 && name.length > 8) {
-                    displayName = name.substring(0, 8) + '...'
-                } else if (numEntries > 200 && name.length > 12) {
-                    displayName = name.substring(0, 12) + '...'
-                } else if (numEntries > 100 && name.length > 15) {
-                    displayName = name.substring(0, 15) + '...'
-                }
-
-                // Position text at corner (closer to edge when more entries)
-                // More entries = closer to edge (corner)
+                if (numEntries > 500 && name.length > 8) displayName = name.substring(0, 8) + '...'
+                else if (numEntries > 200 && name.length > 12) displayName = name.substring(0, 12) + '...'
+                else if (numEntries > 100 && name.length > 15) displayName = name.substring(0, 15) + '...'
                 const textPosition = numEntries > 100 ? radius - 5 : numEntries > 50 ? radius - 8 : radius - 12
-                staticCtx.fillText(displayName, textPosition, 0)
-                staticCtx.restore()
+                sCtx.fillText(displayName, textPosition, 0)
+                sCtx.restore()
             })
 
-            // Draw Center Hub (static, no image rotation)
             const isMobile = window.innerWidth < 768
             const hubRadius = isMobile ? 35 : 70
+            sCtx.beginPath()
+            sCtx.arc(centerX, centerY, hubRadius, 0, 2 * Math.PI)
+            sCtx.fillStyle = 'white'
+            sCtx.shadowColor = 'rgba(0,0,0,0.2)'
+            sCtx.shadowBlur = 5
+            sCtx.fill()
 
-            staticCtx.beginPath()
-            staticCtx.arc(centerX, centerY, hubRadius, 0, 2 * Math.PI)
-            staticCtx.fillStyle = 'white'
-            staticCtx.shadowColor = 'rgba(0,0,0,0.2)'
-            staticCtx.shadowBlur = 5
-            staticCtx.fill()
-
+            // Atomic swap — old canvas stays visible until new one is fully drawn
+            staticWheelCanvasRef.current = tempCanvas
             needsRedrawRef.current = false
         }
 
@@ -421,21 +333,9 @@ const CanvasWheel = memo(({ names, colors, rotation, width = 800, height = 800, 
             ctx.restore()
         }
 
-        // Animation loop - continuously redraw with current rotation
-        // Optimized for smooth 60fps rendering - no frame skipping
-        let lastFrameTime = performance.now()
-        const targetFPS = 60
-        const frameInterval = 1000 / targetFPS
-        
-        const animate = (currentTime) => {
-            const elapsed = currentTime - lastFrameTime
-            
-            // Ensure consistent frame rate for smooth animation
-            if (elapsed >= frameInterval) {
-                drawWheel()
-                lastFrameTime = currentTime - (elapsed % frameInterval)
-            }
-            
+        // Animation loop - draw every frame, no FPS cap (browser handles vsync via rAF)
+        const animate = () => {
+            drawWheel()
             animationFrameRef.current = requestAnimationFrame(animate)
         }
 
