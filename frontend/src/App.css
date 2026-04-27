@@ -17,10 +17,10 @@ body {
 
 /* Theme Variables */
 :root {
-  /* Normal Theme (Default) */
-  --bg-gradient-start: #2b0505;
-  --bg-gradient-mid: #233159;
-  --bg-gradient-end: #05051a;
+  /* Normal Theme (Default) - Brighter gradient for better visibility */
+  --bg-gradient-start: #1a1a2e;
+  --bg-gradient-mid: #16213e;
+  --bg-gradient-end: #0f3460;
   --header-bg: #2a2a2a;
   --header-border: #3a3a3a;
   --text-color: white;
@@ -1552,19 +1552,6 @@ body {
 }
 
 @media (max-width: 768px) {
-  /* Fix black background on mobile - use lighter gradient */
-  .app {
-    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%) !important;
-  }
-  
-  [data-theme="night"] .app {
-    background: linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 50%, #0a0a0a 100%) !important;
-  }
-  
-  [data-theme="light"] .app {
-    background: linear-gradient(135deg, #f5f5f5 0%, #e8e8e8 50%, #ffffff 100%) !important;
-  }
-
   .wheel-wrapper {
     max-width: 400px;
   }
