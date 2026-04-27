@@ -400,7 +400,8 @@ const CanvasWheel = memo(({ names, colors, rotationRef, width = 800, height = 80
             style={{
                 width: '100%',
                 height: '100%',
-                touchAction: 'none'
+                touchAction: 'none',
+                background: 'transparent' // Ensure canvas background is transparent
             }}
         />
     )

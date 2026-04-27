@@ -165,6 +165,7 @@ body {
   margin-right: 0;
   margin-left: 0;
   min-width: 0; /* Allow flex shrinking */
+  background: transparent !important; /* Ensure no background on wheel container */
 }
 
 /* Main Wheel Wrapper - Generic/Mobile First */
@@ -180,6 +181,7 @@ body {
   overflow: visible;
   /* Center wheel properly accounting for arrow on right side */
   margin: 0 auto;
+  background: transparent !important; /* Ensure no background on wheel wrapper */
 
   /* Geometry Constants */
   /* Geometry Constants */
@@ -233,6 +235,7 @@ body {
   transform: rotate(0deg);
   transition: none;
   transform-origin: center center;
+  background: transparent !important; /* Ensure canvas has no background */
 }
 
 .wheel-pointer {
