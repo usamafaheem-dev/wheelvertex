@@ -252,45 +252,46 @@ function App() {
   }, [])
 
   // Continuous slow rotation - only when not spinning and not frozen
-  useEffect(() => {
-    // Cancel any existing slow rotation animation
-    if (animationFrameRef.current && !isSpinning) {
-      // Don't cancel if spinning animation is active
-      return
-    }
+  // DISABLED: Wheel should not auto-rotate on load
+  // useEffect(() => {
+  //   // Cancel any existing slow rotation animation
+  //   if (animationFrameRef.current && !isSpinning) {
+  //     // Don't cancel if spinning animation is active
+  //     return
+  //   }
 
-    // Stop slow rotation when spinning, when winner is found, when pop-up is shown, or when frozen
-    if (isSpinning || winner || showWinner || isFrozenRef.current) {
-      return
-    }
+  //   // Stop slow rotation when spinning, when winner is found, when pop-up is shown, or when frozen
+  //   if (isSpinning || winner || showWinner || isFrozenRef.current) {
+  //     return
+  //   }
 
-    let lastTime = performance.now()
-    const slowRotationFrameRef = { current: null }
+  //   let lastTime = performance.now()
+  //   const slowRotationFrameRef = { current: null }
 
-    const animateSlow = (currentTime) => {
-      // Check if we should stop (conditions may have changed)
-      if (isSpinning || winner || showWinner || isFrozenRef.current) {
-        slowRotationFrameRef.current = null
-        return
-      }
+  //   const animateSlow = (currentTime) => {
+  //     // Check if we should stop (conditions may have changed)
+  //     if (isSpinning || winner || showWinner || isFrozenRef.current) {
+  //       slowRotationFrameRef.current = null
+  //       return
+  //     }
 
-      const delta = currentTime - lastTime
-      lastTime = currentTime
+  //     const delta = currentTime - lastTime
+  //     lastTime = currentTime
 
-      // Smooth idle rotation: 8 degrees/second — only ref, no React re-render
-      finalRotationRef.current = (finalRotationRef.current + (8 * delta / 1000)) % 360
+  //     // Smooth idle rotation: 8 degrees/second — only ref, no React re-render
+  //     finalRotationRef.current = (finalRotationRef.current + (8 * delta / 1000)) % 360
 
-      slowRotationFrameRef.current = requestAnimationFrame(animateSlow)
-    }
+  //     slowRotationFrameRef.current = requestAnimationFrame(animateSlow)
+  //   }
 
-    slowRotationFrameRef.current = requestAnimationFrame(animateSlow)
-    return () => {
-      if (slowRotationFrameRef.current) {
-        cancelAnimationFrame(slowRotationFrameRef.current)
-        slowRotationFrameRef.current = null
-      }
-    }
-  }, [isSpinning, winner, showWinner])
+  //   slowRotationFrameRef.current = requestAnimationFrame(animateSlow)
+  //   return () => {
+  //     if (slowRotationFrameRef.current) {
+  //       cancelAnimationFrame(slowRotationFrameRef.current)
+  //       slowRotationFrameRef.current = null
+  //     }
+  //   }
+  // }, [isSpinning, winner, showWinner])
 
   // Debounce timer for textarea updates
   const textareaUpdateTimerRef = useRef(null)

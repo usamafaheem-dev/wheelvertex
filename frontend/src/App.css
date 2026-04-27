@@ -1552,6 +1552,19 @@ body {
 }
 
 @media (max-width: 768px) {
+  /* Fix black background on mobile - use lighter gradient */
+  .app {
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%) !important;
+  }
+  
+  [data-theme="night"] .app {
+    background: linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 50%, #0a0a0a 100%) !important;
+  }
+  
+  [data-theme="light"] .app {
+    background: linear-gradient(135deg, #f5f5f5 0%, #e8e8e8 50%, #ffffff 100%) !important;
+  }
+
   .wheel-wrapper {
     max-width: 400px;
   }
