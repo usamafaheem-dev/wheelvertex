@@ -6,6 +6,14 @@ import CanvasWheel from './components/CanvasWheel'
 import AdminPanel from './components/AdminPanel'
 import { getSpinFiles } from './services/api'
 
+// Disable console logs to keep console clean
+if (typeof window !== 'undefined') {
+  const noop = () => {}
+  window.console.log = noop
+  window.console.debug = noop
+  window.console.info = noop
+}
+
 function App() {
   // Initialize names as empty array - will be populated from uploaded file or dummy data
   const [names, setNames] = useState([])
@@ -117,50 +125,18 @@ function App() {
   const isFrozenRef = useRef(false) // Track if wheel is frozen
   const fixedBatchRef = useRef(null) // Store the batch used for fixed winner rotation
   const randomBatchRef = useRef(null) // Store the batch used for random spin (to ensure consistency)
-  const [browserZoom, setBrowserZoom] = useState(1) // Track browser zoom level
-  const wheelWrapperRef = useRef(null) // Ref for wheel wrapper to apply inverse scaling
+  const wheelWrapperRef = useRef(null) // Ref for wheel wrapper
   
   // State for displayed names (100 entries at a time)
   const [displayedNames, setDisplayedNames] = useState([])
   // State to track fixed winner name for current spin (so it appears in every batch)
   const [fixedWinnerName, setFixedWinnerName] = useState(null)
 
-  // Detect browser zoom level and apply inverse scaling to keep wheel fixed size
-  useEffect(() => {
-    const detectZoom = () => {
-      // Method: Use a test element to measure actual zoom
-      const testElement = document.createElement('div')
-      testElement.style.width = '100px'
-      testElement.style.position = 'absolute'
-      testElement.style.visibility = 'hidden'
-      testElement.style.top = '-9999px'
-      document.body.appendChild(testElement)
-      const actualWidth = testElement.offsetWidth
-      document.body.removeChild(testElement)
-      const detectedZoom = actualWidth / 100
-      
-      // Apply inverse scaling to wheel-wrapper to maintain fixed visual size
-      if (wheelWrapperRef.current) {
-        const inverseScale = 1 / detectedZoom
-        wheelWrapperRef.current.style.transform = `scale(${inverseScale})`
-        wheelWrapperRef.current.style.transformOrigin = 'center center'
-      }
-    }
-    
-    // Detect zoom on mount and resize
-    detectZoom()
-    
-    // Listen for zoom changes (resize event fires on zoom in most browsers)
-    window.addEventListener('resize', detectZoom)
-    
-    // Also check periodically for zoom changes (some browsers don't fire resize on zoom)
-    const zoomCheckInterval = setInterval(detectZoom, 500)
-    
-    return () => {
-      window.removeEventListener('resize', detectZoom)
-      clearInterval(zoomCheckInterval)
-    }
-  }, [])
+  // NOTE: Removed inverse-scale zoom compensation.
+  // Applying scale() transforms to the wheel wrapper caused the wheel rotation
+  // to appear reversed when zoomed in (CSS transform affects canvas coordinate system).
+  // The wheel now relies on its own responsive CSS sizing and canvas DPR handling,
+  // which works correctly at any zoom level without coordinate system distortion.
 
   // Audio Context for zero-latency synthetic sounds
   const audioContextRef = useRef(null)
@@ -826,25 +802,18 @@ function App() {
 
     const startTime = performance.now()
 
-    // Easing: Natural wheel spin feel
-    // Fast acceleration at start, long steady spin, then smooth gradual stop
+    // Easing: Linear speed throughout, then smoothly decelerates to a stop.
+    // The cubic curve is mathematically matched so speed is exactly 1.0 at the join
+    // point (no jump) and exactly 0.0 at t=1 (clean stop). No fast/slow artifact.
     const ease = (t) => {
-      // Acceleration phase: 0 -> 0.15 (first 15% = ~2.25s)
-      // Full speed phase:   0.15 -> 0.65 (middle 50% = ~7.5s)
-      // Deceleration phase: 0.65 -> 1.0 (last 35% = ~5.25s)
-      if (t < 0.15) {
-        // Smooth ease-in: cubic acceleration
-        const p = t / 0.15
-        return 0.15 * (p * p * p)
-      } else if (t < 0.65) {
-        // Full speed: linear (no jitter, constant velocity feel)
-        const p = (t - 0.15) / 0.50
-        return 0.15 + 0.70 * p
-      } else {
-        // Smooth ease-out: cubic deceleration — natural slow stop
-        const p = (t - 0.65) / 0.35
-        return 0.85 + 0.15 * (1 - Math.pow(1 - p, 3))
+      const join = 0.70
+      if (t <= join) {
+        return t // constant speed
       }
+      // Cubic ease-out: speed=1 at join, speed=0 at t=1, no discontinuity
+      // g(p) = p + p² - p³  →  g'(0)=1, g'(1)=0, g(1)=1
+      const p = (t - join) / (1 - join)
+      return join + (1 - join) * (p + p * p - p * p * p)
     }
 
     const animate = () => {
@@ -2828,21 +2797,18 @@ function App() {
     }
 
     // Set initial batch immediately when names change (only if not currently spinning/showing winner)
-    // If spinning/showing winner, keep current displayedNames unchanged
-    // CRITICAL: Always update displayedNames immediately when names change, so wheel shows new entries right away
     if (!isSpinning && !showWinner && !winner) {
       selectRandomBatch()
     }
 
     // Only start rotation interval if wheel is idle and no winner is displayed
     if (isSpinning || showWinner || winner) {
-      // Wheel is spinning or showing winner - don't rotate participants
       return
     }
 
-    // Update every 50 milliseconds to cycle through different batches
-    // Only when wheel is idle and no winner is displayed
-    const interval = setInterval(selectRandomBatch, 50)
+    // Rotate batch every 3 seconds when idle — frequent updates cause flicker
+    // (was 50ms which triggered constant React re-renders and canvas redraws)
+    const interval = setInterval(selectRandomBatch, 3000)
 
     return () => clearInterval(interval)
   }, [names, isSpinning, showWinner, winner, fixedWinnerName])
@@ -2975,6 +2941,7 @@ function App() {
                   height={750}
                   centerImage={centerImage}
                   centerImageSize={centerImageSize}
+                  isSpinning={isSpinning}
                 />
                 {/* Fixed Arrow Pointer at 3 o'clock (right side) - Does NOT rotate with wheel */}
                 <svg
@@ -3336,6 +3303,7 @@ function App() {
                 height={750}
                 centerImage={centerImage}
                 centerImageSize={centerImageSize}
+                isSpinning={isSpinning}
               />
             </div>
 

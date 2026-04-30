@@ -1,11 +1,19 @@
 import React, { useRef, useEffect, memo } from 'react'
 
-const CanvasWheel = memo(({ names, colors, rotationRef, width = 800, height = 800, centerImage = null, centerImageSize = 'M' }) => {
+const CanvasWheel = memo(({ names, colors, rotationRef, width = 800, height = 800, centerImage = null, centerImageSize = 'M', isSpinning = false }) => {
     const canvasRef = useRef(null)
     const centerImageLoadedRef = useRef(null)
     const animationFrameRef = useRef(null)
     const staticWheelCanvasRef = useRef(null)
-    const needsRedrawRef = useRef(true)
+    // Track the names that were used to draw the current static wheel
+    // During spin we never redraw the static wheel — prevents flicker
+    const lockedNamesRef = useRef(null)
+    const isSpinningRef = useRef(false)
+
+    // Keep isSpinningRef in sync without triggering effect re-runs
+    useEffect(() => {
+        isSpinningRef.current = isSpinning
+    }, [isSpinning])
 
     // Setup canvas and static wheel (only when names/colors change, NOT rotation)
     useEffect(() => {
@@ -13,24 +21,19 @@ const CanvasWheel = memo(({ names, colors, rotationRef, width = 800, height = 80
         if (!canvas) return
 
         // Use optimized context settings for ultra-smooth animation
+        // NOTE: desynchronized:true removed — it causes frame tearing on some GPUs
         const ctx = canvas.getContext('2d', {
             alpha: true,
-            desynchronized: true, // Better performance for animations - allows async rendering
-            willReadFrequently: false, // Optimize for write operations
-            powerPreference: 'high-performance' // Use dedicated GPU if available
+            desynchronized: false,
+            willReadFrequently: false,
+            powerPreference: 'high-performance'
         })
-        
-        // Enable hardware acceleration hints for smooth rendering
+
         if (ctx.imageSmoothingEnabled !== undefined) {
             ctx.imageSmoothingEnabled = true
-            ctx.imageSmoothingQuality = 'high' // Best quality for smooth rendering
+            ctx.imageSmoothingQuality = 'high'
         }
 
-        // Create offscreen canvas for static wheel (initial placeholder)
-        const staticCanvas = document.createElement('canvas')
-        staticWheelCanvasRef.current = staticCanvas
-
-        // Reduce DPR for many entries to improve performance
         const baseDpr = window.devicePixelRatio || 1
         const dpr = names.length > 2000 ? Math.min(baseDpr, 1.5) : baseDpr
 
@@ -40,7 +43,6 @@ const CanvasWheel = memo(({ names, colors, rotationRef, width = 800, height = 80
         let centerY = height / 2
         let radius = Math.min(centerX, centerY) - 20
 
-        // Setup canvas size
         const setupCanvas = () => {
             const displayWidth = canvas.clientWidth || width
             const displayHeight = canvas.clientHeight || height
@@ -51,33 +53,24 @@ const CanvasWheel = memo(({ names, colors, rotationRef, width = 800, height = 80
             centerY = displayHeight / 2
             radius = Math.min(centerX, centerY) - 20
 
-            // Set actual size in memory (scaled to account for extra pixel density)
-            // Setting width/height resets the context, so we need to reapply settings
             canvas.width = displayWidth * dpr
             canvas.height = displayHeight * dpr
-            // staticCanvas size is managed per-draw in drawStaticWheel (double buffer)
 
             ctx.setTransform(1, 0, 0, 1, 0, 0)
             ctx.scale(dpr, dpr)
             ctx.imageSmoothingEnabled = true
             ctx.imageSmoothingQuality = names.length > 1000 ? 'medium' : 'high'
-
-            needsRedrawRef.current = true
         }
 
-        // Throttle resize for better performance with many entries
         let resizeTimeout = null
         const handleResize = () => {
-            if (resizeTimeout) {
-                clearTimeout(resizeTimeout)
-            }
-            
+            if (resizeTimeout) clearTimeout(resizeTimeout)
+            // Never resize during spin — causes flicker
+            if (isSpinningRef.current) return
             const throttleDelay = names.length > 5000 ? 100 : names.length > 2000 ? 50 : 0
-            
             resizeTimeout = setTimeout(() => {
                 setupCanvas()
                 drawStaticWheel()
-                drawWheel()
             }, throttleDelay)
         }
 
@@ -87,9 +80,12 @@ const CanvasWheel = memo(({ names, colors, rotationRef, width = 800, height = 80
         resizeObserver.observe(canvas)
 
         const drawStaticWheel = () => {
-            // Draw to a TEMP canvas first, then swap atomically — never shows blank frame
+            // LOCK: Never redraw static wheel while spinning — this is the main flicker fix
+            if (isSpinningRef.current && staticWheelCanvasRef.current && staticWheelCanvasRef.current.width > 0) {
+                return
+            }
+
             const tempCanvas = document.createElement('canvas')
-            // Use current canvas dimensions (not old static canvas which may be 0)
             tempCanvas.width = canvasWidth * dpr
             tempCanvas.height = canvasHeight * dpr
             const tempCtx = tempCanvas.getContext('2d', { alpha: true, willReadFrequently: false })
@@ -99,7 +95,6 @@ const CanvasWheel = memo(({ names, colors, rotationRef, width = 800, height = 80
             tempCtx.imageSmoothingQuality = names.length > 1000 ? 'medium' : 'high'
             const sCtx = tempCtx
 
-            // Handle empty state
             if (names.length === 0) {
                 sCtx.beginPath()
                 sCtx.arc(centerX, centerY, radius, 0, 2 * Math.PI)
@@ -118,10 +113,12 @@ const CanvasWheel = memo(({ names, colors, rotationRef, width = 800, height = 80
                 sCtx.fill()
                 if (centerImageLoadedRef.current?.complete && centerImageLoadedRef.current?.naturalWidth > 0) {
                     try {
-                        const desktopMultiplier = isMobile ? 1.0 : 1.1
-                        let imageRadius = centerImageSize === 'S' ? hubRadius * 0.75 * desktopMultiplier
-                            : centerImageSize === 'L' ? hubRadius * 1.45 * desktopMultiplier
-                            : hubRadius * 1.15 * desktopMultiplier
+                        const isMob = window.innerWidth < 768
+                        const hub = isMob ? 35 : 70
+                        const desktopMultiplier = isMob ? 1.0 : 1.1
+                        let imageRadius = centerImageSize === 'S' ? hub * 0.75 * desktopMultiplier
+                            : centerImageSize === 'L' ? hub * 1.45 * desktopMultiplier
+                            : hub * 1.15 * desktopMultiplier
                         sCtx.save()
                         sCtx.beginPath()
                         sCtx.arc(centerX, centerY, imageRadius, 0, 2 * Math.PI)
@@ -137,9 +134,8 @@ const CanvasWheel = memo(({ names, colors, rotationRef, width = 800, height = 80
                         sCtx.restore()
                     } catch (e) {}
                 }
-                // Atomic swap
                 staticWheelCanvasRef.current = tempCanvas
-                needsRedrawRef.current = false
+                lockedNamesRef.current = names
                 return
             }
 
@@ -239,85 +235,55 @@ const CanvasWheel = memo(({ names, colors, rotationRef, width = 800, height = 80
             sCtx.shadowBlur = 5
             sCtx.fill()
 
-            // Atomic swap — old canvas stays visible until new one is fully drawn
+            // Atomic swap
             staticWheelCanvasRef.current = tempCanvas
-            needsRedrawRef.current = false
+            lockedNamesRef.current = names
         }
 
-        // Draw wheel with rotation (composite static wheel + rotation)
+        // Draw one frame: composite static wheel + current rotation angle
         const drawWheel = () => {
-            // Ensure we have valid dimensions
-            if (canvasWidth <= 0 || canvasHeight <= 0) {
-                return
-            }
-            
-            // Clear canvas
+            if (canvasWidth <= 0 || canvasHeight <= 0) return
+
             ctx.clearRect(0, 0, canvasWidth, canvasHeight)
 
-            // Draw static wheel with rotation
-            // The rotation value represents clockwise rotation in degrees
-            // Canvas rotate() rotates the coordinate system counter-clockwise for positive angles
-            // To make the wheel appear to rotate clockwise, we rotate the coordinate system counter-clockwise
-            // This means we use a positive angle (no negation needed)
             ctx.save()
             ctx.translate(centerX, centerY)
-            ctx.rotate((rotationRef.current * Math.PI) / 180) // Positive angle for clockwise wheel rotation
+            ctx.rotate((rotationRef.current * Math.PI) / 180)
             ctx.translate(-centerX, -centerY)
-            
-            // Draw the static wheel from offscreen canvas
-            // The static canvas has internal dimensions (canvasWidth * dpr, canvasHeight * dpr)
-            // The main canvas context is scaled by dpr, so we draw at CSS pixel dimensions
-            // Draw the full static canvas using its actual internal dimensions as source
+
             if (staticWheelCanvasRef.current && staticWheelCanvasRef.current.width > 0 && staticWheelCanvasRef.current.height > 0) {
-                // Source: full static canvas (canvasWidth * dpr x canvasHeight * dpr)
-                // Destination: CSS pixel dimensions (canvasWidth x canvasHeight) - context handles DPR scaling
                 ctx.drawImage(
                     staticWheelCanvasRef.current,
-                    0, 0, staticWheelCanvasRef.current.width, staticWheelCanvasRef.current.height, // Source: full canvas
-                    0, 0, canvasWidth, canvasHeight // Destination: CSS pixels (context is scaled)
+                    0, 0, staticWheelCanvasRef.current.width, staticWheelCanvasRef.current.height,
+                    0, 0, canvasWidth, canvasHeight
                 )
             } else {
-                // If static canvas not ready, draw directly (fallback)
-                needsRedrawRef.current = true
                 drawStaticWheel()
                 if (staticWheelCanvasRef.current && staticWheelCanvasRef.current.width > 0) {
                     ctx.drawImage(staticWheelCanvasRef.current, 0, 0, canvasWidth, canvasHeight)
                 }
             }
-            
-            // Draw center image with rotation (if provided)
-            if (centerImageLoadedRef.current && 
-                centerImageLoadedRef.current.complete && 
+
+            // Center image — drawn inside the rotation transform so it stays centered
+            if (centerImageLoadedRef.current &&
+                centerImageLoadedRef.current.complete &&
                 centerImageLoadedRef.current.naturalWidth > 0) {
                 try {
                     const isMobile = window.innerWidth < 768
                     const hubRadius = isMobile ? 35 : 70
-                    
-                    let imageRadius
-                    // Desktop gets slightly larger image
                     const desktopMultiplier = isMobile ? 1.0 : 1.1
-                    if (centerImageSize === 'S') {
-                        imageRadius = hubRadius * 0.75 * desktopMultiplier
-                    } else if (centerImageSize === 'L') {
-                        imageRadius = hubRadius * 1.45 * desktopMultiplier
-                    } else {
-                        imageRadius = hubRadius * 1.15 * desktopMultiplier
-                    }
-                    
+                    let imageRadius
+                    if (centerImageSize === 'S') imageRadius = hubRadius * 0.75 * desktopMultiplier
+                    else if (centerImageSize === 'L') imageRadius = hubRadius * 1.45 * desktopMultiplier
+                    else imageRadius = hubRadius * 1.15 * desktopMultiplier
+
                     ctx.save()
                     ctx.beginPath()
                     ctx.arc(centerX, centerY, imageRadius, 0, 2 * Math.PI)
                     ctx.clip()
-                    ctx.drawImage(
-                        centerImageLoadedRef.current, 
-                        centerX - imageRadius, 
-                        centerY - imageRadius, 
-                        imageRadius * 2, 
-                        imageRadius * 2
-                    )
+                    ctx.drawImage(centerImageLoadedRef.current, centerX - imageRadius, centerY - imageRadius, imageRadius * 2, imageRadius * 2)
                     ctx.restore()
-                    
-                    // Draw thin white border around the image
+
                     ctx.save()
                     ctx.beginPath()
                     ctx.arc(centerX, centerY, imageRadius, 0, 2 * Math.PI)
@@ -325,74 +291,62 @@ const CanvasWheel = memo(({ names, colors, rotationRef, width = 800, height = 80
                     ctx.lineWidth = 1.5
                     ctx.stroke()
                     ctx.restore()
-                } catch (error) {
-                    console.error('Error drawing center image:', error)
-                }
+                } catch (error) {}
             }
 
             ctx.restore()
         }
 
-        // Animation loop - draw every frame, no FPS cap (browser handles vsync via rAF)
+        // Continuous animation loop — runs every frame, reads rotationRef directly
+        // rotationRef is updated by App.jsx's spin animation without triggering re-renders
         const animate = () => {
             drawWheel()
             animationFrameRef.current = requestAnimationFrame(animate)
         }
 
-        // Load center image when it changes
+        // Load center image
         if (centerImage) {
             if (!centerImageLoadedRef.current || centerImageLoadedRef.current.src !== centerImage) {
                 const img = new Image()
                 img.crossOrigin = 'anonymous'
                 img.onload = () => {
                     centerImageLoadedRef.current = img
-                    drawStaticWheel()
-                    drawWheel()
+                    if (!isSpinningRef.current) drawStaticWheel()
                 }
-                img.onerror = (error) => {
-                    console.error('Failed to load center image:', centerImage, error)
-                    centerImageLoadedRef.current = null
-                }
-                if (typeof centerImage === 'string') {
-                    img.src = centerImage
-                }
+                img.onerror = () => { centerImageLoadedRef.current = null }
+                if (typeof centerImage === 'string') img.src = centerImage
             }
         } else {
             centerImageLoadedRef.current = null
         }
 
-        // Initial setup - use requestAnimationFrame to ensure canvas is ready
+        // Initialize
         const initialize = () => {
             const displayWidth = canvas.clientWidth || width
             const displayHeight = canvas.clientHeight || height
-            
+
             if (displayWidth > 0 && displayHeight > 0) {
                 setupCanvas()
                 drawStaticWheel()
-                // Draw immediately to ensure visibility
                 drawWheel()
-                // Start animation loop
+                // Start the animation loop
                 animationFrameRef.current = requestAnimationFrame(animate)
             } else {
-                // Canvas not ready yet, try again next frame
                 animationFrameRef.current = requestAnimationFrame(initialize)
             }
         }
-        
-        // Start initialization
+
         animationFrameRef.current = requestAnimationFrame(initialize)
 
         return () => {
             resizeObserver.disconnect()
-            if (resizeTimeout) {
-                clearTimeout(resizeTimeout)
-            }
+            if (resizeTimeout) clearTimeout(resizeTimeout)
             if (animationFrameRef.current) {
                 cancelAnimationFrame(animationFrameRef.current)
                 animationFrameRef.current = null
             }
         }
-    }, [names, colors, width, height, centerImage, centerImageSize]) // Removed rotation from dependencies
+    }, [names, colors, width, height, centerImage, centerImageSize])
 
     return (
         <canvas
@@ -401,7 +355,9 @@ const CanvasWheel = memo(({ names, colors, rotationRef, width = 800, height = 80
                 width: '100%',
                 height: '100%',
                 touchAction: 'none',
-                background: 'transparent' // Ensure canvas background is transparent
+                background: 'transparent',
+                willChange: 'contents',
+                imageRendering: 'auto'
             }}
         />
     )
