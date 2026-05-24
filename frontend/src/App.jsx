@@ -1755,7 +1755,7 @@ function App() {
                     }
                     
                     // Extract name
-                    const firstName = item['First Name'] || item['first name'] || item['firstName'] || ''
+                    const firstName = item['First Name'] || item['first name'] || item['firstName'] || item['Name'] || item['name'] || item['Full Name'] || item['full name'] || item['fullName'] || item['FullName'] || ''
                     const lastName = item['Last Name'] || item['last name'] || item['lastName'] || ''
                     let displayName = ''
                     
@@ -2046,8 +2046,8 @@ function App() {
           }
           
           // Check for "First Name" and "Last Name" combination
-          const firstName = item['First Name'] || item['first name'] || item['firstName'] || item['First Name'] || ''
-          const lastName = item['Last Name'] || item['last name'] || item['lastName'] || item['Last Name'] || ''
+          const firstName = item['First Name'] || item['first name'] || item['firstName'] || item['Name'] || item['name'] || item['Full Name'] || item['full name'] || item['fullName'] || item['FullName'] || ''
+          const lastName = item['Last Name'] || item['last name'] || item['lastName'] || ''
           
           let displayName = ''
           
@@ -2361,7 +2361,7 @@ function App() {
                 
                 if (String(ticketNumber).trim() === targetTicket) {
                   // Found matching ticket - get the entry details
-                  const firstName = item['First Name'] || item['first name'] || item['firstName'] || ''
+                  const firstName = item['First Name'] || item['first name'] || item['firstName'] || item['Name'] || item['name'] || item['Full Name'] || item['full name'] || item['fullName'] || item['FullName'] || ''
                   const lastName = item['Last Name'] || item['last name'] || item['lastName'] || ''
                   let name = ''
                   if (firstName && lastName) {
@@ -2610,7 +2610,7 @@ function App() {
                   }
                   
                   // Extract name
-                  const firstName = item['First Name'] || item['first name'] || item['firstName'] || ''
+                  const firstName = item['First Name'] || item['first name'] || item['firstName'] || item['Name'] || item['name'] || item['Full Name'] || item['full name'] || item['fullName'] || item['FullName'] || ''
                   const lastName = item['Last Name'] || item['last name'] || item['lastName'] || ''
                   let displayName = ''
                   

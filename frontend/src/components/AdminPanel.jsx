@@ -664,7 +664,7 @@ const AdminPanel = ({ onClose, onFileUploaded, onGoToWheel }) => {
           
           // Process ALL entries - no slice, no limit
           file.json_content.forEach((item, idx) => {
-            const firstName = item['First Name'] || item['first name'] || item['firstName'] || ''
+            const firstName = item['First Name'] || item['first name'] || item['firstName'] || item['Name'] || item['name'] || item['Full Name'] || item['full name'] || item['fullName'] || item['FullName'] || ''
             const lastName = item['Last Name'] || item['last name'] || item['lastName'] || ''
             
             // Extract ticket number - try multiple field names and variations
@@ -797,21 +797,25 @@ const AdminPanel = ({ onClose, onFileUploaded, onGoToWheel }) => {
 
   const handlePasswordSubmit = async (e) => {
     e.preventDefault()
+    console.log('🔑 Login form submitted! Password entered length:', password.length)
     setPasswordError('')
     
     try {
-      // Use backend API to check password
+      console.log('📡 Sending password verification request to backend...')
       const result = await checkPassword(password)
+      console.log('📥 Backend response received:', result)
       
       if (result && result.valid) {
+        console.log('✅ Password is valid! Authenticating...')
         setIsAuthenticated(true)
         setError('')
         setPassword('') // Clear password field after successful login
       } else {
+        console.warn('❌ Password is invalid according to backend.')
         setPasswordError('Invalid password. Default password is "admin"')
       }
     } catch (error) {
-      console.error('Password check error:', error)
+      console.error('🔥 Password check error occurred:', error)
       setPasswordError('Failed to verify password: ' + (error.message || 'Unknown error'))
     }
   }

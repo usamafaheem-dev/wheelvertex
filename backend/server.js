@@ -371,17 +371,20 @@ app.patch('/api/spins/toggle-active/:id/', async (req, res) => {
 app.post('/api/spins/check-password/', async (req, res) => {
   try {
     const { password } = req.body
+    console.log('📥 Received password check request. Password entered:', password ? '***' : 'empty')
 
     if (!password) {
+      console.warn('⚠️ Password check request received with empty password')
       return res.status(400).json({ error: 'Password is required' })
     }
 
     const passwordDoc = await Password.getPassword()
     const isValid = bcrypt.compareSync(password, passwordDoc.hash)
+    console.log('📤 Password check result:', isValid ? 'VALID ✅' : 'INVALID ❌')
 
     res.json({ valid: isValid })
   } catch (error) {
-    console.error('Error checking password:', error)
+    console.error('🔥 Error checking password in backend:', error)
     res.status(500).json({ error: 'Failed to check password' })
   }
 })
