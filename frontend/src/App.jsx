@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import confetti from 'canvas-confetti'
-import { FiSettings, FiFile, FiFolder, FiSave, FiShare2, FiSearch, FiMaximize, FiChevronDown, FiGlobe, FiShuffle, FiArrowUp, FiArrowDown, FiPlay, FiSquare, FiHelpCircle, FiImage, FiDroplet, FiUpload, FiAward, FiX, FiMoon, FiSun } from 'react-icons/fi'
+import { FiSettings, FiFile, FiFolder, FiSave, FiShare2, FiSearch, FiMaximize, FiChevronDown, FiGlobe, FiShuffle, FiArrowUp, FiArrowDown, FiPlay, FiSquare, FiHelpCircle, FiImage, FiDroplet, FiUpload, FiAward, FiX, FiMoon, FiSun, FiVolume2, FiVolumeX } from 'react-icons/fi'
 import './App.css'
 import CanvasWheel from './components/CanvasWheel'
 import AdminPanel from './components/AdminPanel'
@@ -88,6 +88,10 @@ function App() {
     const saved = localStorage.getItem('theme')
     return saved || 'normal'
   }) // Theme: 'night', 'normal', 'light'
+  const [isMuted, setIsMuted] = useState(() => {
+    return localStorage.getItem('isMuted') === 'true'
+  })
+  const isMutedRef = useRef(localStorage.getItem('isMuted') === 'true') // Ref for real-time access in animation loop
 
   const [settings, setSettings] = useState({
     sound: 'Ticking sound',
@@ -841,8 +845,8 @@ function App() {
         // Update ref directly — no React re-render, pure canvas animation
             finalRotationRef.current = current
         
-        // Robust sync: Play sound every 25 degrees (throttle sound for many entries)
-        if (names.length < 2000 && Math.abs(current - lastTickRotation) >= 25) {
+        // Play tick sound — reads ref so mute/unmute works live during spin
+        if (!isMutedRef.current && names.length < 2000 && Math.abs(current - lastTickRotation) >= 25) {
           playClickSound()
           lastTickRotation = current
         }
@@ -3153,6 +3157,19 @@ function App() {
           </button>
         </div>
         <div className="header-right">
+          <button
+            className="header-btn"
+            title={isMuted ? 'Unmute Sound' : 'Mute Sound'}
+            onClick={() => {
+              const next = !isMuted
+              setIsMuted(next)
+              isMutedRef.current = next
+              localStorage.setItem('isMuted', next.toString())
+            }}
+          >
+            {isMuted ? <FiVolumeX className="icon" /> : <FiVolume2 className="icon" />}
+            <span className="hide-on-mobile">{isMuted ? 'Unmute' : 'Mute'}</span>
+          </button>
           <button className="header-btn" title="Customize" onClick={() => setShowCustomize(true)}>
             <FiSettings className="icon" />
             <span>Customize</span>
